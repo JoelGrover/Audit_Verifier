@@ -1,0 +1,55 @@
+.toast-enter {
+  animation: toast-bounce-in 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.toast-exit {
+  animation: toast-bounce-out 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+
+.animate-progress {
+    animation: progress-bar linear forwards;
+}
+
+@keyframes toast-bounce-in {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+
+  80% {
+    transform: scale(0.95);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes toast-pop-out {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+
+    100% {
+        opacity: 0;
+        transform: scale(0.92);
+    }
+}
+
+
+@keyframes progress-bar {
+    0% {
+        width: 100%;
+    }
+
+    100% {
+        width: 0%;
+    }
+}
