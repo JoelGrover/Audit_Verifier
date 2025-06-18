@@ -14,40 +14,73 @@ export default async function handler(req, res) {
     }
 
     try {
-
-        const record = await prisma.materialRecord.findFirst({
+    
+        let records = await prisma.materialRecord.findMany({
             where: {
                 fileId: String(fileId),
-                AND: [
-                    {
-                        data: {
-                            path: ['Material Number'],
-                            equals: materialNumber,
-                        },
-                    },
-                ],
+                data: {
+                    path: ['Material Number'],
+                    equals: materialNumber,
+                },
             },
         });
-
-        if (!record) {
-            return res.status(404).json({ message: 'Record not found' });
+       
+      
+        if (records.length === 0) {
+          
+            records = await prisma.materialRecord.findMany({
+                where: {
+                    fileId: String(fileId),
+                    data: {
+                        path: ['Material Number'],
+                        equals: parseInt(materialNumber, 10),
+                    },
+                },
+            });
         }
 
-        const responseData =
-            record.markedFields.length > 0
-                ? Object.fromEntries(
-                     record.markedFields.map((field) => [field, record.data[field]])
-                )
-                : record.data; // fallback to full data if nothing was marked
+        if (records.length === 0) {
+            
+            records = await prisma.materialRecord.findMany({
+                where: {
+                    fileId: String(fileId),
+                    data: {
+                        path: ['Material Number'],
+                        string_contains: materialNumber,
+                    },
+                },
+            });
+        }
+        
+        console.log('Found records:', records.length);
+
+       
+        if (records.length === 0) {
+            return res.status(404).json({ message: 'No records found' });
+        }
+  // Process each record
+        const processedRecords = records.map(record => {
+            const responseData =
+                record.markedFields && record.markedFields.length > 0
+                    ? Object.fromEntries(
+                         record.markedFields.map((field) => [field, record.data[field]])
+                    )
+                    : record.data; 
+
+            return {
+                Id: record.id,
+                fileId: record.fileId,
+                data: responseData,
+                createdAt: record.createdAt,
+            };
+        });
 
         return res.status(200).json({
-            Id: record.id,
-            fileId: record.fileId,
-            data: responseData,
-            createdAt: record.createdAt,
+            count: records.length,
+            records: processedRecords,
         });
     } catch (error) {
-        console.error('Error fetching material record:', error);
+        console.error('Error fetching material records:', error);
         return res.status(500).json({ message: 'Internal server error', error });
     }
 }

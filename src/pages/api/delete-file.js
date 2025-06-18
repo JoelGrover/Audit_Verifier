@@ -7,7 +7,14 @@ export default async function handler(req, res) {
     return res.status(405).json({ message: 'Only DELETE requests allowed' });
   }
 
+  const verifyPin = process.env.DELETE_PIN
+
   const { id } = req.query;
+  const { deletePin } = req.body
+  
+  if(deletePin != verifyPin){
+    return res.status(405).json({ message: 'Wrong DELETE PIN Provided' });
+  }
 
   if (!id || typeof id !== 'string') {
     return res.status(400).json({ message: 'Missing or invalid file ID' });

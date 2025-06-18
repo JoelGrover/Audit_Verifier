@@ -10,8 +10,15 @@ export const config = {
   },
 };
 
-export default async function handler(req, res) {
+function isEmpty(value) {
+  return value === null || value === undefined || value === '';
+}
 
+function hasValue(value) {
+  return !isEmpty(value);
+}
+
+export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ message: 'Only POST requests allowed' });
   }
@@ -19,18 +26,13 @@ export default async function handler(req, res) {
   const form = new formidable.IncomingForm({ keepExtensions: true });
 
   try {
-    // Wrap form.parse in a Promise to handle it properly
     const { fields, files } = await new Promise((resolve, reject) => {
       form.parse(req, (err, fields, files) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve({ fields, files });
-        }
+        if (err) reject(err);
+        else resolve({ fields, files });
       });
     });
 
- 
     if (!files.file) {
       return res.status(400).json({ message: 'No file uploaded' });
     }
@@ -44,7 +46,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // Process Excel file
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.readFile(filePath);
     
@@ -68,7 +69,6 @@ export default async function handler(req, res) {
     const headers = [];
     const yellowColumns = [];
 
-    // Process header row
     headerRow.eachCell((cell, colNumber) => {
       const fill = cell.fill;
       const isYellow =
@@ -85,7 +85,7 @@ export default async function handler(req, res) {
       }
     });
 
-    // Create file record first (outside of transaction)
+
     const fileRecord = await prisma.file.create({
       data: {
         name: uploadedFile.originalFilename || 'File name undetected',
@@ -94,8 +94,7 @@ export default async function handler(req, res) {
 
     console.log('File record created:', fileRecord.id);
 
-  
-    await prisma.idSequence.upsert({
+    const currentSequence = await prisma.idSequence.upsert({
       where: { entity: 'MaterialRecord' },
       update: {},
       create: {
@@ -104,8 +103,9 @@ export default async function handler(req, res) {
       },
     });
 
-   
-    const rowsToProcess = [];
+    const recordsToInsert = [];
+    let sequenceCounter = currentSequence.nextValue;
+
     for (let rowNumber = 2; rowNumber <= worksheet.rowCount; rowNumber++) {
       const row = worksheet.getRow(rowNumber);
       const rowData = {};
@@ -115,86 +115,65 @@ export default async function handler(req, res) {
         rowData[col.header] = cellValue;
       });
 
-      // Skip completely empty rows
-      const hasData = Object.values(rowData).some(
-        value => value !== null && value !== undefined && value !== ''
-      );
+      // Skip completely empty rows - now properly handles 0 values
+      const hasData = Object.values(rowData).some(value => hasValue(value));
       
       if (!hasData) {
         continue;
       }
 
-      // Determine present yellow-marked fields for this row
+      // Determine present yellow-marked fields for this row - now properly handles 0 values
       const presentMarkedFields = yellowColumns.filter(
-        (field) => {
-          const value = rowData[field];
-          return value !== null && value !== undefined && value !== '';
-        }
+        (field) => hasValue(rowData[field])
       );
 
-      rowsToProcess.push({
-        rowData,
-        presentMarkedFields
+      const materialId = `MAT-${String(sequenceCounter).padStart(3, '0')}`;
+      
+      recordsToInsert.push({
+        id: materialId,
+        fileId: fileRecord.id,
+        markedFields: presentMarkedFields,
+        data: rowData,
+      });
+
+      sequenceCounter++;
+    }
+
+    console.log(`Bulk inserting ${recordsToInsert.length} records...`);
+
+    const BATCH_SIZE = 5000; 
+    let totalInserted = 0;
+
+    for (let i = 0; i < recordsToInsert.length; i += BATCH_SIZE) {
+      const batch = recordsToInsert.slice(i, i + BATCH_SIZE);
+      
+      console.log(`Inserting batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(recordsToInsert.length / BATCH_SIZE)}`);
+      
+      await prisma.$transaction(async (tx) => {
+        // Bulk insert using createMany
+        await tx.materialRecord.createMany({
+          data: batch,
+          skipDuplicates: true, 
+        });
+        
+        totalInserted += batch.length;
+      }, {
+        timeout: 90000, 
       });
     }
 
-    console.log(`Processing ${rowsToProcess.length} rows in batches...`);
+    await prisma.idSequence.update({
+      where: { entity: 'MaterialRecord' },
+      data: { nextValue: sequenceCounter },
+    });
 
-  
-    const BATCH_SIZE = 100;
-    const allSavedRecords = [];
-    
-    for (let i = 0; i < rowsToProcess.length; i += BATCH_SIZE) {
-      const batch = rowsToProcess.slice(i, i + BATCH_SIZE);
-      
-      console.log(`Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(rowsToProcess.length / BATCH_SIZE)}`);
-      
-     
-      const batchResults = await prisma.$transaction(
-        async (tx) => {
-          const batchSaved = [];
-          
-          for (const { rowData, presentMarkedFields } of batch) {
-         
-            const sequence = await tx.idSequence.update({
-              where: { entity: 'MaterialRecord' },
-              data: { nextValue: { increment: 1 } },
-            });
+    console.log(`Successfully inserted ${totalInserted} records`);
 
-            const materialId = `MAT-${String(sequence.nextValue - 1).padStart(3, '0')}`;
-
-            // Create material record
-            const saved = await tx.materialRecord.create({
-              data: {
-                id: materialId,
-                fileId: fileRecord.id,
-                markedFields: presentMarkedFields,
-                data: rowData,
-              },
-            });
-
-            batchSaved.push(saved);
-          }
-          
-          return batchSaved;
-        },
-        {
-          timeout: 30000, 
-        }
-      );
-      
-      allSavedRecords.push(...batchResults);
-    }
-
-    console.log(`Successfully processed ${allSavedRecords.length} records`);
-
-   
     return res.status(200).json({
       message: 'Upload and storage successful',
       yellowFields: yellowColumns,
-      recordsStored: allSavedRecords.length,
+      recordsStored: totalInserted,
       fileId: fileRecord.id,
-      preview: allSavedRecords.slice(0, 5),
     });
 
   } catch (error) {
@@ -207,7 +186,6 @@ export default async function handler(req, res) {
       });
     }
   } finally {
-    
     await prisma.$disconnect();
   }
 }

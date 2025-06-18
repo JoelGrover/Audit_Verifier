@@ -29,41 +29,41 @@ export default async function handler(req, res) {
 
     try {
       const record = await prisma.materialRecord.findFirst({
-        where: {
-          id: materialId,
-          fileId: fileId,
-          data: {
-            path: ['Material Number'],
-            equals: materialNumber,
-          },
-        },
+        where: { id: materialId, fileId: String(fileId) }
       });
 
       if (!record) {
-        results.push({
-          materialId,
-          status: 'not found',
-        });
+        results.push({ materialId, status: 'not found' });
         continue;
       }
+
+      const existingData = record.data || {};
+      const existingMarked = record.markedFields || [];
+
+      const editedFields = Object.keys(data);
+
+      const updatedMarkedFields = Array.from(
+        new Set([...existingMarked, ...editedFields])
+      );
+      const mergedData = {
+        ...existingData,
+        ...data,
+      };
 
       const updated = await prisma.materialRecord.update({
         where: { id: materialId },
         data: {
-          data: {
-            ...record.data,
-            ...data,
-          },
-        },
+          data: mergedData,
+          markedFields: updatedMarkedFields,
+        }
       });
 
-      results.push({
-        materialId,
-        status: 'updated',
-        updated,
-      });
+
+
+      results.push({ materialId, status: 'updated', updated });
 
     } catch (err) {
+      console.error(`Error updating record ${materialId}:`, err);
       results.push({
         materialId,
         status: 'error',

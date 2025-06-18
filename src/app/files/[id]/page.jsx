@@ -1,5 +1,4 @@
 "use client"
-
 import { useState } from "react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -22,51 +21,65 @@ export default function FileMaterialEditor() {
     const [verificationData, setVerificationData] = useState({})
     const [activeTab, setActiveTab] = useState("material")
     const [editMode, setEditMode] = useState(false)
-    const [users] = useState(["User 1", "User 2"])
+    const [users] = useState(["User 1", "User 2", "User 3", "User 4", "User 5", "User 6"])
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
-    const handleSearch = async () => {
-        setLoading(true)
-        try {
-            const res = await axios.get(`/api/get-data`, {
-                params: {
-                    fileId,
-                    materialNumber,
-                },
-            })
+  const handleSearch = async () => {
+    setLoading(true)
+    try {
+        const res = await axios.get(`/api/get-data`, {
+            params: {
+                fileId,
+                materialNumber,
+            },
+        })
 
-            const fetchedRecord = res.data
-            const fetchedRecords = [fetchedRecord]
-            setRecords(fetchedRecords)
+      
+        const responseData = res.data
+        const fetchedRecords = responseData.records || [] 
+        setRecords(fetchedRecords)
 
 
-            const initialEditableData = {}
-            initialEditableData[fetchedRecord.Id] = { ...fetchedRecord.data }
-            setEditableData(initialEditableData)
+        const initialEditableData = {}
+        fetchedRecords.forEach(record => {
+            initialEditableData[record.Id] = { ...record.data }
+        })
+        setEditableData(initialEditableData)
 
-            const initialVerificationData = {}
-            initialVerificationData[fetchedRecord.Id] = {
-                "Verified Qty(mandatory)- numeric": fetchedRecord.data["Verified Qty(mandatory)- numeric"] || "",
-                "Location(Not Mandotry) all": fetchedRecord.data["Location(Not Mandotry) all"] || "",
-                "Remarks all": fetchedRecord.data["Remarks all"] || "",
-                "Verified By": fetchedRecord.data["Verified By"] || users[0],
+   
+        const initialVerificationData = {}
+        fetchedRecords.forEach(record => {
+            initialVerificationData[record.Id] = {
+                "Verified Qty(mandatory)- numeric": record?.data["Verified Qty(mandatory)- numeric"] || "",
+                "Location(Not Mandotry) all": record?.data["Location(Not Mandotry) all"] || "",
+                "Remarks all": record?.data["Remarks all"] || "",
+                "Verified By": record?.data["Verified By"] || users[0],
             }
-            setVerificationData(initialVerificationData)
+        })
+        setVerificationData(initialVerificationData)
 
-            console.log("Fetched record:", fetchedRecord)
-            console.log("Material data:", initialEditableData)
-            console.log("Verification data:", initialVerificationData)
-        } catch (e) {
-            console.error("Error fetching data:", e)
-            if (e.response?.status === 404) {
-                info("No record found for this material number")
-            } else {
-                error("Failed to fetch data")
-            }
-        } finally {
-            setLoading(false)
+        console.log("Fetched records:", fetchedRecords)
+        console.log("Material data:", initialEditableData)
+        console.log("Verification data:", initialVerificationData)
+        
+     
+        success(`Found ${fetchedRecords.length} record(s) for material ${materialNumber}`)
+        
+    } catch (e) {
+        console.error("Error fetching data:", e)
+        if (e.response?.status === 404) {
+            info("No record found for this material number")
+        } else {
+            error("Failed to fetch data")
         }
+        // Clear records on error
+        setRecords([])
+        setEditableData({})
+        setVerificationData({})
+    } finally {
+        setLoading(false)
     }
+}
 
     const handleMaterialFieldChange = (recordId, key, value) => {
         setEditableData((prev) => ({
@@ -105,6 +118,7 @@ export default function FileMaterialEditor() {
                     data: {
                         ...editableData[r.Id],
                         ...verificationData[r.Id],
+                        updatedAt : Date.now()
                     },
                 })),
             })
