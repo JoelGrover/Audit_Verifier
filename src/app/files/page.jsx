@@ -29,16 +29,7 @@ export default function FilesPage() {
     const [exportStatus, setExportStatus] = useState('idle');
     const [deletePin, setDeletePin] = useState('')
     const router = useRouter();
-    const [materialRecord, setMaterialRecord] = useState('');
-    const [fields, setFields] = useState([{ key: '', value: '' }]); 
-    const [createRecordOpen, setCreateRecordOpen] = useState(false)
-    const addField = () => setFields([...fields, { key: '', value: '' }]);
-
-    const handleFieldChange = (index, type, value) => {
-        const updatedFields = [...fields];
-        updatedFields[index][type] = value;
-        setFields(updatedFields);
-    };
+    
     useEffect(() => {
         fetchFiles();
     }, []);
