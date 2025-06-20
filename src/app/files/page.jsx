@@ -386,7 +386,7 @@ export default function FilesPage() {
                                         : 'Not Yet'}</span>
                                 </div>
 
-                                <div className="grid grid-cols-2 gap-2 mt-2">
+                                <div className="grid grid-cols-1 gap-2 mt-2">
                                     <Button onClick={() => router.push(`/files/${file.id}`)} className="cursor-pointer" variant="outline">
                                         Open
                                     </Button>
