@@ -58,6 +58,18 @@ export default async function handler(req, res) {
         }
       });
 
+      const existingModifiedField = await prisma.modifiedFields.findFirst({
+        where: { recordId: updated.id }
+      });
+
+
+      if (!existingModifiedField) {
+        await prisma.modifiedFields.create({
+          data: {
+            recordId: updated.id
+          }
+        });
+      }
 
 
       results.push({ materialId, status: 'updated', updated });

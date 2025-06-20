@@ -1,30 +1,12 @@
 'use client'
-import {
-    Table,
-    TableHeader,
-    TableRow,
-    TableHead,
-    TableBody,
-    TableCell,
-} from '@/components/ui/table';
+import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell, } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogTrigger,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger} from '@/components/ui/dialog';
 import { MoreHorizontal, Upload, Download, FileSpreadsheet, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import {
-    DropdownMenu,
-    DropdownMenuTrigger,
-    DropdownMenuContent,
-    DropdownMenuItem,
-} from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, } from '@/components/ui/dropdown-menu';
 import { format } from 'date-fns';
 import { useToast } from "@/components/Toast/Toast"
 import { useRouter } from 'next/navigation';
@@ -47,7 +29,16 @@ export default function FilesPage() {
     const [exportStatus, setExportStatus] = useState('idle');
     const [deletePin, setDeletePin] = useState('')
     const router = useRouter();
+    const [materialRecord, setMaterialRecord] = useState('');
+    const [fields, setFields] = useState([{ key: '', value: '' }]); 
+    const [createRecordOpen, setCreateRecordOpen] = useState(false)
+    const addField = () => setFields([...fields, { key: '', value: '' }]);
 
+    const handleFieldChange = (index, type, value) => {
+        const updatedFields = [...fields];
+        updatedFields[index][type] = value;
+        setFields(updatedFields);
+    };
     useEffect(() => {
         fetchFiles();
     }, []);
@@ -104,7 +95,7 @@ export default function FilesPage() {
         }
     }
 
-    async function handleDownload(file) {
+    async function handleDownload(file, exportType = 'all') {
         setExportingFile(file);
         setExportModalOpen(true);
         setExportStatus('loading');
@@ -112,7 +103,8 @@ export default function FilesPage() {
 
         try {
             const params = new URLSearchParams({
-                fileId: file.id
+                fileId: file.id,
+                exportType: exportType
             });
 
             setExportProgress('Fetching data from database...');
@@ -191,6 +183,9 @@ export default function FilesPage() {
     const filteredFiles = files.filter((file) =>
         file.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+
+
 
     const getStatusIcon = () => {
         switch (exportStatus) {
@@ -317,10 +312,17 @@ export default function FilesPage() {
                                                     <DropdownMenuContent align="end">
                                                         <DropdownMenuItem
                                                             className="cursor-pointer"
-                                                            onClick={() => handleDownload(file)}
+                                                            onClick={() => handleDownload(file, 'all')}
                                                         >
                                                             <Download className="w-4 h-4 mr-2" />
-                                                            Download Excel
+                                                            Download Full File
+                                                        </DropdownMenuItem>
+                                                        <DropdownMenuItem
+                                                            className="cursor-pointer"
+                                                            onClick={() => handleDownload(file, 'modified')}
+                                                        >
+                                                            <Download className="w-4 h-4 mr-2" />
+                                                            Download only Modified
                                                         </DropdownMenuItem>
                                                         <DropdownMenuItem
                                                             className="text-red-500 cursor-pointer"
@@ -361,10 +363,17 @@ export default function FilesPage() {
                                         <DropdownMenuContent align="end">
                                             <DropdownMenuItem
                                                 className="cursor-pointer"
-                                                onClick={() => handleDownload(file)}
+                                                onClick={() => handleDownload(file, 'all')}
                                             >
                                                 <Download className="w-4 h-4 mr-2" />
-                                                Download Excel
+                                                Download Full File
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                className="cursor-pointer"
+                                                onClick={() => handleDownload(file, 'modified')}
+                                            >
+                                                <Download className="w-4 h-4 mr-2" />
+                                                Download only Modified
                                             </DropdownMenuItem>
                                             <DropdownMenuItem
                                                 className="text-red-500 cursor-pointer"
@@ -390,9 +399,13 @@ export default function FilesPage() {
                                     <Button onClick={() => router.push(`/files/${file.id}`)} className="cursor-pointer" variant="outline">
                                         Open
                                     </Button>
-                                    <Button onClick={() => handleDownload(file)} className="cursor-pointer">
+                                    <Button onClick={() => handleDownload(file, 'all')} className="cursor-pointer">
                                         <Download className="w-4 h-4 mr-2" />
-                                        Download
+                                        Download Full File
+                                    </Button>
+                                    <Button onClick={() => handleDownload(file, 'modified')} className="cursor-pointer">
+                                        <Download className="w-4 h-4 mr-2" />
+                                        Download only Modified
                                     </Button>
                                 </div>
                             </div>

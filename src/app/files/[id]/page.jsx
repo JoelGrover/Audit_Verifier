@@ -9,12 +9,14 @@ import axios from "axios"
 import { useParams } from "next/navigation"
 import { useToast } from "@/components/Toast/Toast"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 export default function FileMaterialEditor() {
     const { success, error, info, warning } = useToast()
     const params = useParams()
     const fileId = params.id
     const [materialNumber, setMaterialNumber] = useState("")
+    const [oracleNumber, setOracleNumber] = useState("")
     const [records, setRecords] = useState([])
     const [loading, setLoading] = useState(false)
     const [editableData, setEditableData] = useState({})
@@ -23,63 +25,75 @@ export default function FileMaterialEditor() {
     const [editMode, setEditMode] = useState(false)
     const [users] = useState(["User 1", "User 2", "User 3", "User 4", "User 5", "User 6"])
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+    const [materialRecord, setMaterialRecord] = useState('');
+    const [fields, setFields] = useState([{ key: '', value: '' }]);
+    const [open, setOpen] = useState(false);
 
-  const handleSearch = async () => {
-    setLoading(true)
-    try {
-        const res = await axios.get(`/api/get-data`, {
-            params: {
-                fileId,
-                materialNumber,
-            },
-        })
+    const addField = () => setFields([...fields, { key: '', value: '' }]);
 
-      
-        const responseData = res.data
-        const fetchedRecords = responseData.records || [] 
-        setRecords(fetchedRecords)
+    const handleFieldChange = (index, type, value) => {
+        const updatedFields = [...fields];
+        updatedFields[index][type] = value;
+        setFields(updatedFields);
+    };
+
+    const handleSearch = async () => {
+        setLoading(true)
+        try {
+            const res = await axios.get(`/api/get-data`, {
+                params: {
+                    fileId,
+                    materialNumber,
+                    oracleNumber
+                },
+            })
 
 
-        const initialEditableData = {}
-        fetchedRecords.forEach(record => {
-            initialEditableData[record.Id] = { ...record.data }
-        })
-        setEditableData(initialEditableData)
+            const responseData = res.data
+            const fetchedRecords = responseData.records || []
+            setRecords(fetchedRecords)
 
-   
-        const initialVerificationData = {}
-        fetchedRecords.forEach(record => {
-            initialVerificationData[record.Id] = {
-                "Verified Qty(mandatory)- numeric": record?.data["Verified Qty(mandatory)- numeric"] || "",
-                "Location(Not Mandotry) all": record?.data["Location(Not Mandotry) all"] || "",
-                "Remarks all": record?.data["Remarks all"] || "",
-                "Verified By": record?.data["Verified By"] || users[0],
+
+            const initialEditableData = {}
+            fetchedRecords.forEach(record => {
+                initialEditableData[record.Id] = { ...record.data }
+            })
+            setEditableData(initialEditableData)
+
+
+            const initialVerificationData = {}
+            fetchedRecords.forEach(record => {
+                initialVerificationData[record.Id] = {
+                    "Verified Qty(mandatory)- numeric": record?.data["Verified Qty(mandatory)- numeric"] || "",
+                    "Location(Not Mandotry) all": record?.data["Location(Not Mandotry) all"] || "",
+                    "Remarks all": record?.data["Remarks all"] || "",
+                    "Verified By": record?.data["Verified By"] || users[0],
+                }
+            })
+            setVerificationData(initialVerificationData)
+
+            console.log("Fetched records:", fetchedRecords)
+            console.log("Material data:", initialEditableData)
+            console.log("Verification data:", initialVerificationData)
+
+
+            success(`Found ${fetchedRecords.length} record(s) for material ${materialNumber}`)
+
+        } catch (e) {
+            console.error("Error fetching data:", e)
+            if (e.response?.status === 404) {
+                info("No record found for this material number")
+            } else {
+                error("Failed to fetch data")
             }
-        })
-        setVerificationData(initialVerificationData)
-
-        console.log("Fetched records:", fetchedRecords)
-        console.log("Material data:", initialEditableData)
-        console.log("Verification data:", initialVerificationData)
-        
-     
-        success(`Found ${fetchedRecords.length} record(s) for material ${materialNumber}`)
-        
-    } catch (e) {
-        console.error("Error fetching data:", e)
-        if (e.response?.status === 404) {
-            info("No record found for this material number")
-        } else {
-            error("Failed to fetch data")
+            // Clear records on error
+            setRecords([])
+            setEditableData({})
+            setVerificationData({})
+        } finally {
+            setLoading(false)
         }
-        // Clear records on error
-        setRecords([])
-        setEditableData({})
-        setVerificationData({})
-    } finally {
-        setLoading(false)
     }
-}
 
     const handleMaterialFieldChange = (recordId, key, value) => {
         setEditableData((prev) => ({
@@ -110,6 +124,7 @@ export default function FileMaterialEditor() {
 
     const handleSave = async () => {
         try {
+            setLoading(true)
             await axios.put("/api/edit-material-record", {
                 fileId,
                 updates: records.map((r) => ({
@@ -118,7 +133,7 @@ export default function FileMaterialEditor() {
                     data: {
                         ...editableData[r.Id],
                         ...verificationData[r.Id],
-                        updatedAt : Date.now()
+                        updatedAt: Date.now()
                     },
                 })),
             })
@@ -127,6 +142,8 @@ export default function FileMaterialEditor() {
         } catch (e) {
             console.error("Error saving:", e)
             error("Failed to save changes")
+        } finally {
+            setLoading(false)
         }
     }
     const TabButton = ({ tabId, label, isActive, onClick }) => (
@@ -141,6 +158,29 @@ export default function FileMaterialEditor() {
         </button>
     )
 
+    const createRecord = async () => {
+        const data = {};
+        const markedFields = [];
+        fields.forEach(({ key, value }) => {
+            if (key) {
+                data[key] = value;
+                markedFields.push(key);
+            }
+        });
+
+        try {
+            const res = await axios.post('/api/create-material-record', {
+                fileId,
+                data,
+                markedFields
+            });
+
+            alert(`Created Record ID: ${res.data.generatedId}`);
+            setOpen(false);
+        } catch (err) {
+            alert('Error creating record: ' + err.response?.data?.message || err.message);
+        }
+    };
     return (
         <div className="min-h-screen bg-gray-50 sm:bg-white">
 
@@ -166,15 +206,25 @@ export default function FileMaterialEditor() {
                         <div className="flex-1 relative">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                             <Input
-                                placeholder="Enter Material Number (e.g., MAT001)"
+                                placeholder="Enter Material Number"
                                 value={materialNumber}
                                 onChange={(e) => setMaterialNumber(e.target.value)}
                                 className="pl-10 h-10 sm:h-12 text-base sm:text-lg"
                             />
                         </div>
+                        OR
+                        <div className="flex-1 relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                            <Input
+                                placeholder="Enter Oracle Number"
+                                value={oracleNumber}
+                                onChange={(e) => setOracleNumber(e.target.value)}
+                                className="pl-10 h-10 sm:h-12 text-base sm:text-lg"
+                            />
+                        </div>
                         <Button
                             onClick={handleSearch}
-                            disabled={loading || !materialNumber.trim()}
+                            disabled={loading}
                             className="h-10 sm:h-12 px-4 sm:px-6 w-full sm:w-auto"
                             size="lg"
                         >
@@ -195,9 +245,18 @@ export default function FileMaterialEditor() {
                                 className="pl-10 h-12 text-base"
                             />
                         </div>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                            <Input
+                                placeholder="Enter Oracle Number"
+                                value={oracleNumber}
+                                onChange={(e) => setOracleNumber(e.target.value)}
+                                className="pl-10 h-12 text-base"
+                            />
+                        </div>
                         <Button
                             onClick={handleSearch}
-                            disabled={loading || !materialNumber.trim()}
+                            disabled={loading}
                             className="h-12 w-full"
                             size="lg"
                         >
@@ -213,7 +272,31 @@ export default function FileMaterialEditor() {
                                 <Search className="h-12 sm:h-16 w-12 sm:w-16 mx-auto mb-4" />
                             </div>
                             <h3 className="text-base sm:text-lg font-medium text-black mb-2">No Records Found</h3>
-                            <p className="text-sm sm:text-base text-gray-500 px-4">Enter a material number above and click search to load records</p>
+                            <p className="text-sm sm:text-base text-gray-500 px-4">
+                                Enter a material number above and click search to load records
+                            </p>
+
+                            <Dialog open={open} onOpenChange={setOpen}>
+                                <DialogTrigger asChild>
+                                    <Button variant="default" className="mt-4">CREATE MANUAL RECORD</Button>
+                                </DialogTrigger>
+                                <DialogContent className="sm:max-w-xl">
+                                    <DialogHeader>
+                                        <DialogTitle>Create Material Record</DialogTitle>
+                                    </DialogHeader>
+                                    <div className="space-y-4">
+
+                                        {fields.map((field, index) => (
+                                            <div key={index} className="flex gap-2">
+                                                <Input placeholder="Key (e.g  : Material Number )" value={field.key} onChange={(e) => handleFieldChange(index, 'key', e.target.value)} />
+                                                <Input placeholder="Value" value={field.value} onChange={(e) => handleFieldChange(index, 'value', e.target.value)} />
+                                            </div>
+                                        ))}
+                                        <Button variant="ghost" onClick={addField}>+ Add Field</Button>
+                                        <Button onClick={createRecord} className="w-full mt-2">Submit</Button>
+                                    </div>
+                                </DialogContent>
+                            </Dialog>
                         </CardContent>
                     </Card>
                 )}
@@ -292,7 +375,7 @@ export default function FileMaterialEditor() {
                                                         onChange={(e) => handleMaterialFieldChange(record.Id, key, e.target.value)}
                                                         disabled={!editMode || key === "Material Number"}
                                                         className={`h-10 sm:h-11 ${!editMode || key === "Material Number"
-                                                            ? "bg-white text-black font-medium"  
+                                                            ? "bg-white text-black font-medium"
                                                             : "bg-white text-black border-blue-200 focus:border-blue-400 focus:outline-none focus:ring-1 focus:ring-blue-400"
                                                             }`}
                                                     />
@@ -318,7 +401,7 @@ export default function FileMaterialEditor() {
                                                     </div>
                                                     {key === "Verified By" ? (
                                                         <select
-                                                            className={`w-full border rounded-md px-3 py-2 h-10 sm:h-11 focus:outline-none focus:ring-2 focus:ring-blue-500 ${!editMode ? "bg-gray-50 text-black font-medium" : "bg-white border-blue-200" }`}
+                                                            className={`w-full border rounded-md px-3 py-2 h-10 sm:h-11 focus:outline-none focus:ring-2 focus:ring-blue-500 ${!editMode ? "bg-gray-50 text-black font-medium" : "bg-white border-blue-200"}`}
                                                             value={value || users[0]}
                                                             onChange={(e) => handleVerificationFieldChange(record.Id, key, e.target.value)}
                                                             disabled={!editMode}
@@ -336,7 +419,7 @@ export default function FileMaterialEditor() {
                                                             value={value || ""}
                                                             onChange={(e) => handleVerificationFieldChange(record.Id, key, e.target.value)}
                                                             disabled={!editMode}
-                                                           className={`h-10 sm:h-11 ${!editMode ? "bg-gray-50 text-black font-medium" : "bg-white border-blue-200 focus:border-blue-400" }`}
+                                                            className={`h-10 sm:h-11 ${!editMode ? "bg-gray-50 text-black font-medium" : "bg-white border-blue-200 focus:border-blue-400"}`}
                                                         />
                                                     ) : (
                                                         <Input
@@ -379,10 +462,11 @@ export default function FileMaterialEditor() {
                         </Button>
                         <Button
                             onClick={handleSave}
+                            disabled={loading}
                             className="px-4 sm:px-6 h-12 sm:h-10 flex items-center justify-center gap-2 order-1 sm:order-2"
                         >
                             <Save className="h-4 w-4" />
-                            Save All Changes
+                            {loading ? "Loading..." : 'Save All Changes'}
                         </Button>
                     </div>
                 )}

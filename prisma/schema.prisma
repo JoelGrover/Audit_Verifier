@@ -23,15 +23,22 @@ model File {
 }
 
 model MaterialRecord {
-  id           String   @id
-  file         File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  fileId       String
-  markedFields String[]
-  data         Json
-  createdAt    DateTime @default(now())
+  id             String           @id
+  file           File             @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  fileId         String
+  markedFields   String[]
+  data           Json
+  createdAt      DateTime         @default(now())
+  modifiedFields ModifiedFields[]
 }
 
 model IdSequence {
   entity    String @id
   nextValue Int
+}
+
+model ModifiedFields {
+  id       Int            @id @default(autoincrement())
+  record   MaterialRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  recordId String
 }

@@ -18,15 +18,29 @@ export default async function handler(req, res) {
     }
 
     try {
-        const { fileId, filters } = req.query;
+        const { fileId, filters, exportType = 'all' } = req.query;
 
         if (!fileId) {
             return res.status(400).json({ message: 'fileId is required' });
         }
 
-        console.log(`Starting export for fileId: ${fileId}`);
+        // Validate exportType parameter
+        if (!['all', 'modified'].includes(exportType)) {
+            return res.status(400).json({ 
+                message: 'exportType must be either "all" or "modified"' 
+            });
+        }
+
+        console.log(`Starting ${exportType} export for fileId: ${fileId}`);
 
         let whereClause = { fileId: fileId };
+
+        // Only add modifiedFields filter if exportType is 'modified'
+        if (exportType === 'modified') {
+            whereClause.modifiedFields = {
+                some: {}
+            };
+        }
 
         if (filters) {
             try {
@@ -42,7 +56,8 @@ export default async function handler(req, res) {
         let skip = 0;
         let hasMore = true;
 
-        console.log('Fetching records in batches...');
+        const recordTypeText = exportType === 'modified' ? 'records with modified fields' : 'records';
+        console.log(`Fetching ${recordTypeText} in batches...`);
 
         while (hasMore) {
             const batch = await prisma.materialRecord.findMany({
@@ -53,7 +68,14 @@ export default async function handler(req, res) {
                     id: true,
                     data: true,
                     markedFields: true,
-                    createdAt: true
+                    createdAt: true,
+                    ...(exportType === 'modified' && {
+                        modifiedFields: {
+                            select: {
+                                id: true
+                            }
+                        }
+                    })
                 },
                 orderBy: {
                     id: 'asc'
@@ -65,15 +87,18 @@ export default async function handler(req, res) {
             } else {
                 allRecords.push(...batch);
                 skip += BATCH_SIZE;
-                console.log(`Fetched ${allRecords.length} records so far...`);
+                console.log(`Fetched ${allRecords.length} ${recordTypeText} so far...`);
             }
         }
 
         if (allRecords.length === 0) {
-            return res.status(404).json({ message: 'No records found for the given fileId' });
+            const noRecordsMessage = exportType === 'modified' 
+                ? 'No modified records found for the given fileId'
+                : 'No records found for the given fileId';
+            return res.status(404).json({ message: noRecordsMessage });
         }
 
-        console.log(`Total records fetched: ${allRecords.length}`);
+        console.log(`Total ${recordTypeText} fetched: ${allRecords.length}`);
 
         const fileInfo = await prisma.file.findUnique({
             where: { id: fileId },
@@ -87,7 +112,8 @@ export default async function handler(req, res) {
         workbook.creator = 'Export System';
         workbook.created = new Date();
         
-        const worksheet = workbook.addWorksheet('Data', {
+        const worksheetName = exportType === 'modified' ? 'Modified Data' : 'All Data';
+        const worksheet = workbook.addWorksheet(worksheetName, {
             properties: {
                 defaultRowHeight: 20,
             }
@@ -116,7 +142,7 @@ export default async function handler(req, res) {
         const endHeaders = ['Verified By', 'Updated At', 'Created At'];
         const allColumnsHeaders = [...systemHeaders, ...dataHeaders, ...endHeaders];
 
-        console.log(`Creating Excel with ${allColumnsHeaders.length} columns...`);
+        console.log(`Creating Excel with ${allColumnsHeaders.length} columns for ${exportType} records...`);
 
        
         const cleanCellValue = (value) => {
@@ -150,7 +176,7 @@ export default async function handler(req, res) {
             cell.font = { bold: true };
         }
 
-        console.log('Adding data rows...');
+        console.log(`Adding ${exportType} records data rows...`);
 
         let currentRow = 2;  
         for (let recordIndex = 0; recordIndex < allRecords.length; recordIndex++) {
@@ -177,11 +203,11 @@ export default async function handler(req, res) {
             currentRow++;
 
             if (recordIndex % 1000 === 0) {
-                console.log(`Processed ${recordIndex + 1}/${allRecords.length} records for Excel...`);
+                console.log(`Processed ${recordIndex + 1}/${allRecords.length} ${exportType} records for Excel...`);
             }
         }
 
-        console.log(`Processed all ${allRecords.length} records for Excel...`);
+        console.log(`Processed all ${allRecords.length} ${exportType} records for Excel...`);
 
         for (let i = 1; i <= allColumnsHeaders.length; i++) {
             const column = worksheet.getColumn(i);
@@ -204,9 +230,10 @@ export default async function handler(req, res) {
 
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
         const originalName = fileInfo?.name ? fileInfo.name.replace(/\.[^/.]+$/, '') : 'export';
-        const filename = `${originalName}_export_${timestamp}.xlsx`;
+        const exportTypeText = exportType === 'modified' ? 'modified' : 'all';
+        const filename = `${originalName}_${exportTypeText}_export_${timestamp}.xlsx`;
 
-        console.log(`Excel export complete: ${filename} (${buffer.length} bytes)`);
+        console.log(`Excel export complete: ${filename} (${buffer.length} bytes) - ${exportType} records`);
 
         res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -218,7 +245,7 @@ export default async function handler(req, res) {
         res.end(buffer);
 
     } catch (error) {
-        console.error('Error exporting to Excel:', error);
+        console.error('Error exporting records to Excel:', error);
 
         if (!res.headersSent) {
             return res.status(500).json({
