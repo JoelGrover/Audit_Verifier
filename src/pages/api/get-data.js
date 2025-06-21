@@ -10,89 +10,92 @@ export default async function handler(req, res) {
     const { fileId, materialNumber, oracleNumber } = req.query;
 
     if (!fileId || (!materialNumber && !oracleNumber)) {
-        return res.status(400).json({ message: 'fileId and materialNumber are required' });
+        return res.status(400).json({ message: 'fileId and at least one of materialNumber or oracleNumber are required' });
     }
+
     console.log('Query params:', { fileId, materialNumber, oracleNumber });
     console.log('materialNumber type:', typeof materialNumber, 'value:', materialNumber);
     console.log('oracleNumber type:', typeof oracleNumber, 'value:', oracleNumber);
 
     try {
+        let records = [];
 
-        let records = await prisma.materialRecord.findMany({
-            where: {
-                fileId: String(fileId),
-                OR: [
-                    {
-                        data: {
-                            path: ['Material Number'],
-                            equals: materialNumber,
-                        },
+       
+        const buildConditions = (materialNum, oracleNum, operation = 'equals') => {
+            const conditions = [];
+            
+            if (materialNum) {
+                conditions.push({
+                    data: {
+                        path: ['Material Number'],
+                        [operation]: materialNum,
                     },
-                    {
-                        data: {
-                            path: ['Oracle Number'],
-                            equals: oracleNumber,
-                        },
+                });
+            }
+            
+            if (oracleNum) {
+                conditions.push({
+                    data: {
+                        path: ['Oracle Number'],
+                        [operation]: oracleNum,
                     },
-                ],
-            },
-        });
+                });
+            }
+            
+            return conditions;
+        };
 
-        console.log(records)
-
-        if (records.length === 0) {
-
+        
+        let conditions = buildConditions(materialNumber, oracleNumber, 'equals');
+        if (conditions.length > 0) {
             records = await prisma.materialRecord.findMany({
                 where: {
                     fileId: String(fileId),
-                    OR: [
-                        {
-                            data: {
-                                path: ['Material Number'],
-                                equals: parseInt(materialNumber, 10),
-                            },
-                        },
-                        {
-                            data: {
-                                path: ['Oracle Number'],
-                                equals: parseInt(oracleNumber, 10)
-                            }
-                        }
-                    ]
+                    OR: conditions,
                 },
             });
         }
 
-        if (records.length === 0) {
+        console.log('First query results:', records.length);
 
-            records = await prisma.materialRecord.findMany({
-                where: {
-                    fileId: String(fileId),
-                    OR: [
-                        {
-                            data: {
-                                path: ['Material Number'],
-                                string_contains: materialNumber,
-                            },
-                        },
-                        {
-                            data: {
-                                path: ['Oracle Number'],
-                                string_contains: oracleNumber,
-                            },
-                        }
-                    ]
-                },
-            });
+        
+        if (records.length === 0) {
+            const parsedMaterialNumber = materialNumber ? parseInt(materialNumber, 10) : null;
+            const parsedOracleNumber = oracleNumber ? parseInt(oracleNumber, 10) : null;
+            
+            conditions = buildConditions(parsedMaterialNumber, parsedOracleNumber, 'equals');
+            if (conditions.length > 0) {
+                records = await prisma.materialRecord.findMany({
+                    where: {
+                        fileId: String(fileId),
+                        OR: conditions,
+                    },
+                });
+            }
         }
 
+        console.log('Second query results:', records.length);
+
+        if (records.length === 0) {
+            conditions = buildConditions(materialNumber, oracleNumber, 'string_contains');
+            if (conditions.length > 0) {
+                records = await prisma.materialRecord.findMany({
+                    where: {
+                        fileId: String(fileId),
+                        OR: conditions,
+                    },
+                });
+            }
+        }
+
+        console.log('Third query results:', records.length);
         console.log('Found records:', records.length);
-
 
         if (records.length === 0) {
             return res.status(404).json({ message: 'No records found' });
         }
-        // Process each record
+
+       
         const processedRecords = records.map(record => {
             const responseData =
                 record.markedFields && record.markedFields.length > 0

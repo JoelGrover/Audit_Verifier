@@ -128,8 +128,8 @@ export default function FileMaterialEditor() {
             await axios.put("/api/edit-material-record", {
                 fileId,
                 updates: records.map((r) => ({
-                    materialId: r.Id,
-                    materialNumber,
+                    materialNumber: materialNumber || undefined,
+                    oracleNumber: oracleNumber || undefined,
                     data: {
                         ...editableData[r.Id],
                         ...verificationData[r.Id],

@@ -15,25 +15,103 @@ export default async function handler(req, res) {
 
   const results = [];
 
-  for (const update of updates) {
-    const { materialId, materialNumber, data } = update;
+  // Helper function to find record by materialNumber or oracleNumber
+  const findRecord = async (fileId, materialNumber, oracleNumber) => {
+    const conditions = [];
+    
+    if (materialNumber) {
+      conditions.push({
+        data: {
+          path: ['Material Number'],
+          equals: materialNumber,
+        },
+      });
+    }
+    
+    if (oracleNumber) {
+      conditions.push({
+        data: {
+          path: ['Oracle Number'],
+          equals: oracleNumber,
+        },
+      });
+    }
 
-    if (!materialId || !materialNumber || typeof data !== 'object') {
+    if (conditions.length === 0) {
+      return null;
+    }
+
+    // Try exact string match first
+    let record = await prisma.materialRecord.findFirst({
+      where: {
+        fileId: String(fileId),
+        OR: conditions,
+      },
+    });
+
+    // If not found, try with parsed integers
+    if (!record) {
+      const intConditions = [];
+      
+      if (materialNumber) {
+        const parsedMaterial = parseInt(materialNumber, 10);
+        if (!isNaN(parsedMaterial)) {
+          intConditions.push({
+            data: {
+              path: ['Material Number'],
+              equals: parsedMaterial,
+            },
+          });
+        }
+      }
+      
+      if (oracleNumber) {
+        const parsedOracle = parseInt(oracleNumber, 10);
+        if (!isNaN(parsedOracle)) {
+          intConditions.push({
+            data: {
+              path: ['Oracle Number'],
+              equals: parsedOracle,
+            },
+          });
+        }
+      }
+
+      if (intConditions.length > 0) {
+        record = await prisma.materialRecord.findFirst({
+          where: {
+            fileId: String(fileId),
+            OR: intConditions,
+          },
+        });
+      }
+    }
+
+    return record;
+  };
+
+  for (const update of updates) {
+    const { materialNumber, oracleNumber, data } = update;
+    const identifier = materialNumber || oracleNumber;
+
+    if ((!materialNumber && !oracleNumber) || typeof data !== 'object') {
       results.push({
-        materialId,
+        identifier,
         status: 'skipped',
-        reason: 'Missing fields or invalid data',
+        reason: 'Missing materialNumber/oracleNumber or invalid data',
       });
       continue;
     }
 
     try {
-      const record = await prisma.materialRecord.findFirst({
-        where: { id: materialId, fileId: String(fileId) }
-      });
+      const record = await findRecord(fileId, materialNumber, oracleNumber);
 
       if (!record) {
-        results.push({ materialId, status: 'not found' });
+        results.push({ 
+          identifier, 
+          status: 'not found',
+          searchedFor: { materialNumber, oracleNumber }
+        });
         continue;
       }
 
@@ -51,7 +129,7 @@ export default async function handler(req, res) {
       };
 
       const updated = await prisma.materialRecord.update({
-        where: { id: materialId },
+        where: { id: record.id },
         data: {
           data: mergedData,
           markedFields: updatedMarkedFields,
@@ -62,7 +140,6 @@ export default async function handler(req, res) {
         where: { recordId: updated.id }
       });
 
-
       if (!existingModifiedField) {
         await prisma.modifiedFields.create({
           data: {
@@ -71,13 +148,17 @@ export default async function handler(req, res) {
         });
       }
 
-
-      results.push({ materialId, status: 'updated', updated });
+      results.push({ 
+        identifier, 
+        materialId: record.id,
+        status: 'updated', 
+        updated 
+      });
 
     } catch (err) {
-      console.error(`Error updating record ${materialId}:`, err);
+      console.error(`Error updating record with identifier ${identifier}:`, err);
       results.push({
-        materialId,
+        identifier,
         status: 'error',
         error: err.message,
       });
